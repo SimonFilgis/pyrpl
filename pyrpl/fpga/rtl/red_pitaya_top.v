@@ -154,6 +154,8 @@ wire             ps_sys_ren         ;
 wire  [ 32-1: 0] ps_sys_rdata       ;
 wire             ps_sys_err         ;
 wire             ps_sys_ack         ;
+wire  [  8-1: 0] hk_led_o           ;
+reg   [ 32-1: 0] led_cnt            ;
 
 // AXI masters
 wire             axi1_clk    , axi0_clk    ;
@@ -343,6 +345,15 @@ dac_rst  <= ~frstn[0] | ~pll_locked;
 always @(posedge pwm_clk)
 pwm_rstn <=  frstn[0] &  pll_locked;
 
+// Simple free-running LED pattern for board bring-up.
+always @(posedge fclk[0])
+if (!frstn[0])
+  led_cnt <= 32'd0;
+else
+  led_cnt <= led_cnt + 1'd1;
+
+assign led_o = led_cnt[28:21];
+
 ////////////////////////////////////////////////////////////////////////////////
 // ADC IO
 ////////////////////////////////////////////////////////////////////////////////
@@ -397,7 +408,7 @@ red_pitaya_hk i_hk (
   .clk_i           (  adc_clk                    ),  // clock
   .rstn_i          (  adc_rstn                   ),  // reset - active low
   // LED
-  .led_o           (  led_o                      ),  // LED output
+  .led_o           (  hk_led_o                   ),  // LED output unused during bring-up
   // global configuration
   .digital_loop    (  digital_loop               ),
   // Expansion connector
