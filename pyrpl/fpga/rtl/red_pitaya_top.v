@@ -156,6 +156,7 @@ wire             ps_sys_err         ;
 wire             ps_sys_ack         ;
 wire  [  8-1: 0] hk_led_o           ;
 reg   [ 32-1: 0] led_cnt            ;
+reg   [ 32-1: 0] adc_clk_cnt        ;
 
 // AXI masters
 wire             axi1_clk    , axi0_clk    ;
@@ -345,23 +346,42 @@ dac_rst  <= ~frstn[0] | ~pll_locked;
 always @(posedge pwm_clk)
 pwm_rstn <=  frstn[0] &  pll_locked;
 
-// Simple free-running LED pattern for board bring-up.
+// Simple free-running counters for board bring-up diagnostics.
 always @(posedge fclk[0])
 if (!frstn[0])
   led_cnt <= 32'd0;
 else
   led_cnt <= led_cnt + 1'd1;
 
-assign led_o = led_cnt[28:21];
+always @(posedge adc_clk)
+  adc_clk_cnt <= adc_clk_cnt + 1'd1;
+
+// LED debug map:
+// LED0 = PS FCLK reset released
+// LED1 = ADC PLL locked
+// LED2 = ADC domain reset released
+// LED3 = AXI0 reset released
+// LED4 = PyRPL system bus reset released
+// LED5 = ADC clock alive
+// LED6 = FCLK0 alive
+// LED7 = constant marker
+assign led_o[0] = frstn[0];
+assign led_o[1] = pll_locked;
+assign led_o[2] = adc_rstn;
+assign led_o[3] = axi0_rstn;
+assign led_o[4] = ps_sys_rstn;
+assign led_o[5] = adc_clk_cnt[26];
+assign led_o[6] = led_cnt[26];
+assign led_o[7] = 1'b1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // ADC IO
 ////////////////////////////////////////////////////////////////////////////////
 
-// generating ADC clock is disabled
-assign adc_clk_o = 2'b10;
-//ODDR i_adc_clk_p ( .Q(adc_clk_o[0]), .D1(1'b1), .D2(1'b0), .C(fclk[0]), .CE(1'b1), .R(1'b0), .S(1'b0));
-//ODDR i_adc_clk_n ( .Q(adc_clk_o[1]), .D1(1'b0), .D2(1'b1), .C(fclk[0]), .CE(1'b1), .R(1'b0), .S(1'b0));
+// Drive the ADC sampling clock from PS FCLK0. The ADC returns this clock on
+// adc_clk_p_i/adc_clk_n_i, which also clocks the PyRPL GP0 register bus.
+ODDR i_adc_clk_p ( .Q(adc_clk_o[0]), .D1(1'b1), .D2(1'b0), .C(fclk[0]), .CE(1'b1), .R(1'b0), .S(1'b0));
+ODDR i_adc_clk_n ( .Q(adc_clk_o[1]), .D1(1'b0), .D2(1'b1), .C(fclk[0]), .CE(1'b1), .R(1'b0), .S(1'b0));
 
 // ADC clock duty cycle stabilizer is enabled
 assign adc_cdcs_o = 1'b1 ;
