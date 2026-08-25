@@ -61,8 +61,8 @@ set_property PACKAGE_PIN U19           [get_ports adc_clk_n_i]
 
 # Output ADC clock
 set_property IOSTANDARD LVCMOS18 [get_ports {adc_clk_o[*]}]
-set_property SLEW       FAST     [get_ports {adc_clk_o[*]}]
-set_property DRIVE      8        [get_ports {adc_clk_o[*]}]
+set_property SLEW       SLOW     [get_ports {adc_clk_o[*]}]
+set_property DRIVE      4        [get_ports {adc_clk_o[*]}]
 #set_property IOB        TRUE     [get_ports {adc_clk_o[*]}]
 
 set_property PACKAGE_PIN N20 [get_ports {adc_clk_o[0]}]
@@ -169,20 +169,20 @@ set_property PACKAGE_PIN M15 [get_ports {exp_n_io[7]}]
 #set_property PULLUP   TRUE [get_ports {exp_p_io[7]}]
 #set_property PULLUP   TRUE [get_ports {exp_n_io[7]}]
 
-### SATA connector
-set_property IOSTANDARD LVCMOS18 [get_ports {daisy_p_o[*]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {daisy_n_o[*]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {daisy_p_i[*]}]
-set_property IOSTANDARD LVCMOS18 [get_ports {daisy_n_i[*]}]
+### ADC parallel programming mode control
+set_property IOSTANDARD LVCMOS18 [get_ports adc_sck_o]
+set_property IOSTANDARD LVCMOS18 [get_ports adc_sdi_o]
+set_property IOSTANDARD LVCMOS18 [get_ports adc_sdo_o]
+set_property SLEW SLOW [get_ports adc_sck_o]
+set_property SLEW SLOW [get_ports adc_sdi_o]
+set_property SLEW SLOW [get_ports adc_sdo_o]
+set_property DRIVE 4 [get_ports adc_sck_o]
+set_property DRIVE 4 [get_ports adc_sdi_o]
+set_property DRIVE 4 [get_ports adc_sdo_o]
 
-set_property PACKAGE_PIN T12 [get_ports {daisy_p_o[0]}]
-set_property PACKAGE_PIN U12 [get_ports {daisy_n_o[0]}]
-set_property PACKAGE_PIN U14 [get_ports {daisy_p_o[1]}]
-set_property PACKAGE_PIN U15 [get_ports {daisy_n_o[1]}]
-set_property PACKAGE_PIN P14 [get_ports {daisy_p_i[0]}]
-set_property PACKAGE_PIN R14 [get_ports {daisy_n_i[0]}]
-set_property PACKAGE_PIN N18 [get_ports {daisy_p_i[1]}]
-set_property PACKAGE_PIN P19 [get_ports {daisy_n_i[1]}]
+set_property PACKAGE_PIN P19 [get_ports adc_sck_o]
+set_property PACKAGE_PIN N18 [get_ports adc_sdi_o]
+set_property PACKAGE_PIN R17 [get_ports adc_sdo_o]
 
 ### LED
 set_property IOSTANDARD LVCMOS33 [get_ports {led_o[*]}]
@@ -210,8 +210,6 @@ create_clock -period 8.000 -name adc_clk [get_ports adc_clk_p_i]
 set_input_delay -clock adc_clk 3.400 [get_ports adc_dat_a_i[*]]
 set_input_delay -clock adc_clk 3.400 [get_ports adc_dat_b_i[*]]
 
-create_clock -period 4.000 -name rx_clk  [get_ports daisy_p_i[1]]
-
 set_property LOC XADC_X0Y0 [get_cells i_ams/XADC_inst]
 
 ############################################################################
@@ -225,11 +223,3 @@ set_false_path -from [get_clocks clk_fpga_0]  -to [get_clocks adc_clk]
 set_false_path -from [get_clocks clk_fpga_0]  -to [get_clocks par_clk]
 set_false_path -from [get_clocks dac_clk_out] -to [get_clocks dac_2clk_out]
 set_false_path -from [get_clocks dac_clk_out] -to [get_clocks dac_2ph_out]
-
-### SATA connector
-# set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {daisy_p_o[*]}]
-# set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {daisy_n_o[*]}]
-# set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {daisy_p_i[*]}]
-# set_property IOSTANDARD DIFF_HSTL_I_18 [get_ports {daisy_n_i[*]}]
-
-# set_property PULLTYPE PULLUP [get_ports daisy_p_i[1]]

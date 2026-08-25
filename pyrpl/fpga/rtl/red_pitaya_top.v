@@ -114,6 +114,9 @@ module red_pitaya_top (
    input            adc_clk_n_i        ,  // ADC data clock
    output [ 2-1: 0] adc_clk_o          ,  // optional ADC clock source
    output           adc_cdcs_o         ,  // ADC clock duty cycle stabilizer
+   output           adc_sck_o          ,  // ADC parallel mode: 0 = full-rate CMOS
+   output           adc_sdi_o          ,  // ADC parallel mode power bit 0
+   output           adc_sdo_o          ,  // ADC parallel mode power bit 1
    // DAC
    output [14-1: 0] dac_dat_o          ,  // DAC combined data
    output           dac_wrt_o          ,  // DAC write
@@ -128,11 +131,6 @@ module red_pitaya_top (
    // Expansion connector
    inout  [ 8-1: 0] exp_p_io           ,
    inout  [ 8-1: 0] exp_n_io           ,
-   // SATA connector
-   output [ 2-1: 0] daisy_p_o          ,  // line 1 is clock capable
-   output [ 2-1: 0] daisy_n_o          ,
-   input  [ 2-1: 0] daisy_p_i          ,  // line 1 is clock capable
-   input  [ 2-1: 0] daisy_n_i          ,
    // LED
    output [ 8-1: 0] led_o       
 );
@@ -386,6 +384,12 @@ ODDR i_adc_clk_n ( .Q(adc_clk_o[1]), .D1(1'b0), .D2(1'b1), .C(fclk[0]), .CE(1'b1
 // ADC clock duty cycle stabilizer is enabled
 assign adc_cdcs_o = 1'b1 ;
 
+// LTC2145 parallel programming mode straps (PAR/SER is tied high on RPSoM):
+// SCK=0 selects full-rate CMOS output mode, SDI/SDO=00 selects normal operation.
+assign adc_sck_o = 1'b0 ;
+assign adc_sdi_o = 1'b0 ;
+assign adc_sdo_o = 1'b0 ;
+
 // IO block registers should be used here
 // lowest 2 bits reserved for 16bit ADC
 always @(posedge adc_clk)
@@ -610,12 +614,5 @@ red_pitaya_pwm pwm [4-1:0] (
   .pwm_o (dac_pwm_o),
   .pwm_s ()
 );
-
-//---------------------------------------------------------------------------------
-//  Daisy chain
-//  simple communication module
-
-assign daisy_p_o = 1'bz;
-assign daisy_n_o = 1'bz;
 
 endmodule

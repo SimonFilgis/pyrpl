@@ -209,20 +209,7 @@ set_property PACKAGE_PIN U5  [get_ports {exp_9_io}]
 #set_property PULLUP   TRUE [get_ports {exp_p_io[7]}]
 #set_property PULLUP   TRUE [get_ports {exp_n_io[7]}]
 
-### SATA connector
-#set_property IOSTANDARD LVCMOS18 [get_ports {daisy_p_o[*]}]
-#set_property IOSTANDARD LVCMOS18 [get_ports {daisy_n_o[*]}]
-#set_property IOSTANDARD LVCMOS18 [get_ports {daisy_p_i[*]}]
-#set_property IOSTANDARD LVCMOS18 [get_ports {daisy_n_i[*]}]
-
-set_property PACKAGE_PIN T12 [get_ports {daisy_p_o[0]}]
-set_property PACKAGE_PIN U12 [get_ports {daisy_n_o[0]}]
-set_property PACKAGE_PIN U14 [get_ports {daisy_p_o[1]}]
-set_property PACKAGE_PIN U15 [get_ports {daisy_n_o[1]}]
-set_property PACKAGE_PIN P14 [get_ports {daisy_p_i[0]}]
-set_property PACKAGE_PIN R14 [get_ports {daisy_n_i[0]}]
-set_property PACKAGE_PIN N18 [get_ports {daisy_p_i[1]}]
-set_property PACKAGE_PIN P19 [get_ports {daisy_n_i[1]}]
+### SATA/daisy-chain pins removed for RPSoM ADC bring-up.
 
 ### LED
 set_property IOSTANDARD LVCMOS33 [get_ports {led_o[*]}]
@@ -245,8 +232,6 @@ set_property PACKAGE_PIN N15 [get_ports {led_o[7]}]
 create_clock -period 4.000 -name adc_clk [get_ports {adc_clk_i[1]}]
 create_clock -period 4.000 -name dco_clk [get_ports dac_dco_i]
 create_clock -period 100.000 -name pll_ref_i -waveform {0.000 50.000} [get_ports pll_ref_i]
-create_clock -period 4.000 -name rx_clk [get_ports {daisy_p_i[1]}]
-
 create_generated_clock -name i_hk/dna_clk -source [get_pins pll/pll/CLKOUT1] -divide_by 8 [get_pins i_hk/dna_clk_reg/Q]
 
 
@@ -291,6 +276,4 @@ set_input_delay -clock [get_clocks adc_clk] -max -add_delay -0.400 [get_ports {a
 
 
 set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
-
-
 
