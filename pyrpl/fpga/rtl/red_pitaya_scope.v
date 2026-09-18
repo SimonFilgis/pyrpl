@@ -367,55 +367,46 @@ end
 
 
 
-//////////////// AXI IS DISABLED SINCE WE ARE NOT USING IT /////////////////////
+//////////////// AXI CHA/CHB free-running DDR streaming /////////////////////
 
 //---------------------------------------------------------------------------------
 //
-//  AXI CHA connection
+//  AXI CHA connection -- free-running: axi_a_we tracks set_a_axi_en directly,
+//  no trigger/arm gating. axi_a_clr is a one-cycle pulse on the enable's own
+//  0-to-1 edge, deliberately decoupled from adc_rst_do (the BRAM ring buffer's
+//  reset/re-arm pulse) so a concurrently running DDR stream isn't restarted
+//  whenever the BRAM/trigger path is reset or re-armed.
 
 reg  [ 32-1: 0] set_a_axi_start    ;
 reg  [ 32-1: 0] set_a_axi_stop     ;
-reg  [ 32-1: 0] set_a_axi_dly      ;
+reg  [ 32-1: 0] set_a_axi_dly      ; // unused by this FSM, kept for register-map stability
 reg             set_a_axi_en       ;
-reg  [ 32-1: 0] set_a_axi_trig     ;
+reg  [ 32-1: 0] set_a_axi_trig     ; // vestigial (no trigger concept here), always 0
 reg  [ 32-1: 0] set_a_axi_cur      ;
+reg             set_a_axi_ovf      ;
 reg             axi_a_we           ;
 reg  [ 64-1: 0] axi_a_dat          ;
 reg  [  2-1: 0] axi_a_dat_sel      ;
 reg  [  1-1: 0] axi_a_dat_dv       ;
-reg  [ 32-1: 0] axi_a_dly_cnt      ;
-reg             axi_a_dly_do       ;
+reg             axi_a_en_prev      ;
 wire            axi_a_clr          ;
 wire [ 32-1: 0] axi_a_cur_addr     ;
+wire            axi_a_overflow     ;
 
-assign axi_a_clr = adc_rst_do ;
-
+assign axi_a_clr = set_a_axi_en && !axi_a_en_prev ;
 
 always @(posedge axi0_clk_o) begin
    if (axi0_rstn_o == 1'b0) begin
-      axi_a_we      <=  1'b0 ;
-      axi_a_dat     <= 64'h0 ;
-      axi_a_dat_sel <=  2'h0 ;
-      axi_a_dat_dv  <=  1'b0 ;
-      axi_a_dly_cnt <= 32'h0 ;
-      axi_a_dly_do  <=  1'b0 ;
+      axi_a_we       <=  1'b0 ;
+      axi_a_dat      <= 64'h0 ;
+      axi_a_dat_sel  <=  2'h0 ;
+      axi_a_dat_dv   <=  1'b0 ;
+      axi_a_en_prev  <=  1'b0 ;
+      set_a_axi_trig <= 32'h0 ;
    end
-   /*
    else begin
-      if (adc_arm_do && set_a_axi_en)
-         axi_a_we <= 1'b1 ;
-      else if (((axi_a_dly_do || adc_trig) && (axi_a_dly_cnt == 32'h0)) || adc_rst_do) //delayed reached or reset
-         axi_a_we <= 1'b0 ;
-
-      if (adc_trig && axi_a_we)
-         axi_a_dly_do  <= 1'b1 ;
-      else if ((axi_a_dly_do && (axi_a_dly_cnt == 32'b0)) || axi_a_clr || adc_arm_do) //delayed reached or reset
-         axi_a_dly_do  <= 1'b0 ;
-
-      if (axi_a_dly_do && axi_a_we && adc_dv)
-         axi_a_dly_cnt <= axi_a_dly_cnt - 1;
-      else if (!axi_a_dly_do)
-         axi_a_dly_cnt <= set_a_axi_dly ;
+      axi_a_en_prev <= set_a_axi_en ;
+      axi_a_we      <= set_a_axi_en ; // free-running: no trigger/arm gating
 
       if (axi_a_clr)
          axi_a_dat_sel <= 2'h0 ;
@@ -433,17 +424,20 @@ always @(posedge axi0_clk_o) begin
    end
 
    if (axi_a_clr)
-      set_a_axi_trig <= {RSZ{1'b0}};
-   else if (adc_trig && !axi_a_dly_do && axi_a_we)
-      set_a_axi_trig <= {axi_a_cur_addr[32-1:3],axi_a_dat_sel,1'b0} ; // save write pointer at trigger arrival
-
-   if (axi_a_clr)
       set_a_axi_cur <= set_a_axi_start ;
    else if (axi0_wvalid_o)
       set_a_axi_cur <= axi_a_cur_addr ;
-*/
 end
-/*
+
+always @(posedge axi0_clk_o) begin
+   if (axi0_rstn_o == 1'b0)
+      set_a_axi_ovf <= 1'b0 ;
+   else if (axi_a_clr)
+      set_a_axi_ovf <= 1'b0 ;
+   else if (axi_a_overflow)
+      set_a_axi_ovf <= 1'b1 ;
+end
+
 axi_wr_fifo #(
   .DW  (  64    ), // data width (8,16,...,1024)
   .AW  (  32    ), // address width
@@ -471,124 +465,28 @@ axi_wr_fifo #(
   .ctrl_trig_size_i   (  4'hF              ), // trigger level
   .ctrl_wrap_i        (  1'b1              ), // start from begining when reached stop
   .ctrl_clr_i         (  axi_a_clr         ), // clear / flush
-  .stat_overflow_o    (                    ), // overflow indicator
+  .stat_overflow_o    (  axi_a_overflow    ), // overflow indicator
   .stat_cur_addr_o    (  axi_a_cur_addr    ), // current write address
   .stat_write_data_o  (                    )  // write data indicator
 );
-*/
 assign axi0_clk_o  = adc_clk_i ;
 assign axi0_rstn_o = adc_rstn_i;
 
 //---------------------------------------------------------------------------------
 //
-//  AXI CHB connection
+//  AXI CHB connection -- removed to fit the xc7z010's slice budget (each
+//  axi_wr_fifo's internal 256x64 buffer costs real LUT/FF resources with no
+//  RAM-style pragma, and this device had no room for two). Only channel A
+//  streams; HP1 is left idle/tied off.
 
-reg  [ 32-1: 0] set_b_axi_start    ;
-reg  [ 32-1: 0] set_b_axi_stop     ;
-reg  [ 32-1: 0] set_b_axi_dly      ;
-reg             set_b_axi_en       ;
-reg  [ 32-1: 0] set_b_axi_trig     ;
-reg  [ 32-1: 0] set_b_axi_cur      ;
-reg             axi_b_we           ;
-reg  [ 64-1: 0] axi_b_dat          ;
-reg  [  2-1: 0] axi_b_dat_sel      ;
-reg  [  1-1: 0] axi_b_dat_dv       ;
-reg  [ 32-1: 0] axi_b_dly_cnt      ;
-reg             axi_b_dly_do       ;
-wire            axi_b_clr          ;
-wire [ 32-1: 0] axi_b_cur_addr     ;
-
-assign axi_b_clr = adc_rst_do ;
-
-
-always @(posedge axi1_clk_o) begin
-   if (axi1_rstn_o == 1'b0) begin
-      axi_b_we      <=  1'b0 ;
-      axi_b_dat     <= 64'h0 ;
-      axi_b_dat_sel <=  2'h0 ;
-      axi_b_dat_dv  <=  1'b0 ;
-      axi_b_dly_cnt <= 32'h0 ;
-      axi_b_dly_do  <=  1'b0 ;
-   end
-/*   else begin
-      if (adc_arm_do && set_b_axi_en)
-         axi_b_we <= 1'b1 ;
-      else if (((axi_b_dly_do || adc_trig) && (axi_b_dly_cnt == 32'h0)) || adc_rst_do) //delayed reached or reset
-         axi_b_we <= 1'b0 ;
-
-      if (adc_trig && axi_b_we)
-         axi_b_dly_do  <= 1'b1 ;
-      else if ((axi_b_dly_do && (axi_b_dly_cnt == 32'b0)) || axi_b_clr || adc_arm_do) //delayed reached or reset
-         axi_b_dly_do  <= 1'b0 ;
-
-      if (axi_b_dly_do && axi_b_we && adc_dv)
-         axi_b_dly_cnt <= axi_b_dly_cnt - 1;
-      else if (!axi_b_dly_do)
-         axi_b_dly_cnt <= set_b_axi_dly ;
-
-      if (axi_b_clr)
-         axi_b_dat_sel <= 2'h0 ;
-      else if (axi_b_we && adc_dv)
-         axi_b_dat_sel <= axi_b_dat_sel + 2'h1 ;
-
-      axi_b_dat_dv <= axi_b_we && (axi_b_dat_sel == 2'b11) && adc_dv ;
-   end
-
-   if (axi_b_we && adc_dv) begin
-      if (axi_b_dat_sel == 2'b00) axi_b_dat[ 16-1:  0] <= $signed(adc_b_dat);
-      if (axi_b_dat_sel == 2'b01) axi_b_dat[ 32-1: 16] <= $signed(adc_b_dat);
-      if (axi_b_dat_sel == 2'b10) axi_b_dat[ 48-1: 32] <= $signed(adc_b_dat);
-      if (axi_b_dat_sel == 2'b11) axi_b_dat[ 64-1: 48] <= $signed(adc_b_dat);
-   end
-
-   if (axi_b_clr)
-      set_b_axi_trig <= {RSZ{1'b0}};
-   else if (adc_trig && !axi_b_dly_do && axi_b_we)
-      set_b_axi_trig <= {axi_b_cur_addr[32-1:3],axi_b_dat_sel,1'b0} ; // save write pointer at trigger arrival
-
-   if (axi_b_clr)
-      set_b_axi_cur <= set_b_axi_start ;
-   else if (axi1_wvalid_o)
-      set_b_axi_cur <= axi_b_cur_addr ;
-    */
-end
-/*
-axi_wr_fifo #(
-  .DW  (  64    ), // data width (8,16,...,1024)
-  .AW  (  32    ), // address width
-  .FW  (   8    )  // address width of FIFO pointers
-) i_wr1 (
-   // global signals
-  .axi_clk_i          (  axi1_clk_o        ), // global clock
-  .axi_rstn_i         (  axi1_rstn_o       ), // global reset
-
-   // Connection to AXI master
-  .axi_waddr_o        (  axi1_waddr_o      ), // write address
-  .axi_wdata_o        (  axi1_wdata_o      ), // write data
-  .axi_wsel_o         (  axi1_wsel_o       ), // write byte select
-  .axi_wvalid_o       (  axi1_wvalid_o     ), // write data valid
-  .axi_wlen_o         (  axi1_wlen_o       ), // write burst length
-  .axi_wfixed_o       (  axi1_wfixed_o     ), // write burst type (fixed / incremental)
-  .axi_werr_i         (  axi1_werr_i       ), // write error
-  .axi_wrdy_i         (  axi1_wrdy_i       ), // write ready
-
-   // data and configuration
-  .wr_data_i          (  axi_b_dat         ), // write data
-  .wr_val_i           (  axi_b_dat_dv      ), // write data valid
-  .ctrl_start_addr_i  (  set_b_axi_start   ), // range start address
-  .ctrl_stop_addr_i   (  set_b_axi_stop    ), // range stop address
-  .ctrl_trig_size_i   (  4'hF              ), // trigger level
-  .ctrl_wrap_i        (  1'b1              ), // start from begining when reached stop
-  .ctrl_clr_i         (  axi_b_clr         ), // clear / flush
-  .stat_overflow_o    (                    ), // overflow indicator
-  .stat_cur_addr_o    (  axi_b_cur_addr    ), // current write address
-  .stat_write_data_o  (                    )  // write data indicator
-);
-*/
-assign axi1_clk_o  = adc_clk_i ;
-assign axi1_rstn_o = adc_rstn_i;
-
-////////////// END AXI DISABLING ////////////////////
+assign axi1_clk_o    = adc_clk_i ;
+assign axi1_rstn_o   = adc_rstn_i;
+assign axi1_waddr_o  = 32'h0 ;
+assign axi1_wdata_o  = 64'h0 ;
+assign axi1_wsel_o   =  8'h0 ;
+assign axi1_wvalid_o =  1'b0 ;
+assign axi1_wlen_o   =  4'h0 ;
+assign axi1_wfixed_o =  1'b0 ;
 
 
 //---------------------------------------------------------------------------------
@@ -800,7 +698,6 @@ if (adc_rstn_i == 1'b0) begin
    set_b_filt_pp <=  25'h0      ;*/
    set_deb_len   <=  20'd62500  ;
    set_a_axi_en  <=   1'b0      ;
-   set_b_axi_en  <=   1'b0      ;
 end else begin
    if (sys_wen) begin
       if (sys_addr[19:0]==20'h00)   adc_we_keep   <= sys_wdata[     3] ;
@@ -823,17 +720,11 @@ end else begin
       if (sys_addr[19:0]==20'h48)   set_b_filt_kk <= sys_wdata[25-1:0] ;
       if (sys_addr[19:0]==20'h4C)   set_b_filt_pp <= sys_wdata[25-1:0] ;
       */
-      /*
       if (sys_addr[19:0]==20'h50)   set_a_axi_start <= sys_wdata[32-1:0] ;
       if (sys_addr[19:0]==20'h54)   set_a_axi_stop  <= sys_wdata[32-1:0] ;
       if (sys_addr[19:0]==20'h58)   set_a_axi_dly   <= sys_wdata[32-1:0] ;
       if (sys_addr[19:0]==20'h5C)   set_a_axi_en    <= sys_wdata[     0] ;
 
-      if (sys_addr[19:0]==20'h70)   set_b_axi_start <= sys_wdata[32-1:0] ;
-      if (sys_addr[19:0]==20'h74)   set_b_axi_stop  <= sys_wdata[32-1:0] ;
-      if (sys_addr[19:0]==20'h78)   set_b_axi_dly   <= sys_wdata[32-1:0] ;
-      if (sys_addr[19:0]==20'h7C)   set_b_axi_en    <= sys_wdata[     0] ;
-      */
       if (sys_addr[19:0]==20'h90)   set_deb_len <= sys_wdata[20-1:0] ;
    end
 end
@@ -881,21 +772,13 @@ end else begin
      20'h00048 : begin sys_ack <= sys_en;          sys_rdata <= {{32-25{1'b0}}, set_b_filt_kk}      ; end
      20'h0004C : begin sys_ack <= sys_en;          sys_rdata <= {{32-25{1'b0}}, set_b_filt_pp}      ; end
      */
-     /*
      20'h00050 : begin sys_ack <= sys_en;          sys_rdata <=                 set_a_axi_start     ; end
      20'h00054 : begin sys_ack <= sys_en;          sys_rdata <=                 set_a_axi_stop      ; end
      20'h00058 : begin sys_ack <= sys_en;          sys_rdata <=                 set_a_axi_dly       ; end
      20'h0005C : begin sys_ack <= sys_en;          sys_rdata <= {{32- 1{1'b0}}, set_a_axi_en}       ; end
      20'h00060 : begin sys_ack <= sys_en;          sys_rdata <=                 set_a_axi_trig      ; end
      20'h00064 : begin sys_ack <= sys_en;          sys_rdata <=                 set_a_axi_cur       ; end
-
-     20'h00070 : begin sys_ack <= sys_en;          sys_rdata <=                 set_b_axi_start     ; end
-     20'h00074 : begin sys_ack <= sys_en;          sys_rdata <=                 set_b_axi_stop      ; end
-     20'h00078 : begin sys_ack <= sys_en;          sys_rdata <=                 set_b_axi_dly       ; end
-     20'h0007C : begin sys_ack <= sys_en;          sys_rdata <= {{32- 1{1'b0}}, set_b_axi_en}       ; end
-     20'h00080 : begin sys_ack <= sys_en;          sys_rdata <=                 set_b_axi_trig      ; end
-     20'h00084 : begin sys_ack <= sys_en;          sys_rdata <=                 set_b_axi_cur       ; end
-     */
+     20'h00068 : begin sys_ack <= sys_en;          sys_rdata <= {{32- 1{1'b0}}, set_a_axi_ovf}      ; end
 
      20'h00090 : begin sys_ack <= sys_en;          sys_rdata <= {{32-20{1'b0}}, set_deb_len}        ; end
     

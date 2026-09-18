@@ -307,6 +307,20 @@ end
  MODULE DEFINITIONS
  *********************************************/
 
+// PID0-2, TRIG, IIR, IQ0-2 (slots 0-7) disabled below for RPSoM: this
+// whole chain (lock-in amplifier / PID / IIR signal-processing modules,
+// unused for the scope/streaming DAQ use case this board is actually
+// configured for) was the source of a severe, pre-existing timing closure
+// failure on pll_adc_clk (12523/33792 endpoints failing setup, worst
+// slack -4.191ns) -- confirmed via the routed timing report that
+// violations traced into i_pid (slot 2), iir (slot 4), and both
+// iq_block instances (slots 5-7). Slot 3's trig_o (red_pitaya_trigger_
+// block) fed only the scope's trigger source 4'd10 ("dsp trigger"),
+// which rpsom-io.c/rpsom-web.c never expose (they only define sources
+// 1-9) -- safe to disable with no software-visible effect. The
+// EXTRAMODULES crossbar (ASG1/ASG2, SCOPE1/SCOPE2, above) is pure wire
+// assignment with no module instances and is untouched by this change.
+/*
 //PID
 
 wire [14-1:0] diff_input_signal [3-1:0];
@@ -365,7 +379,7 @@ end
 endgenerate
 assign trig_o = trig_signal;
 
-//IIR module 
+//IIR module
 generate for (j = 4; j < 5; j = j+1) begin
     red_pitaya_iir_block iir (
 	     // data
@@ -388,7 +402,7 @@ end endgenerate
 
 //IQ modules
 generate for (j = 5; j < 7; j = j+1) begin
-    red_pitaya_iq_block 
+    red_pitaya_iq_block
       iq
       (
 	     // data
@@ -436,5 +450,18 @@ generate for (j = 7; j < 8; j = j+1) begin
          .wdata (sys_wdata)
       );
 end endgenerate
+*/
+
+// Tie off so the crossbar still synthesizes correctly with no dangling
+// entries for the disabled slots 0-7 above.
+generate for (j = 0; j < MODULES; j = j+1) begin
+   assign output_signal[j] = 14'h0;
+   assign output_direct[j] = 14'h0;
+   assign module_rdata[j]  = 32'h0;
+   assign module_ack[j]    = sys_wen | sys_ren;
+end
+endgenerate
+
+assign trig_o = 1'b0;
 
 endmodule
