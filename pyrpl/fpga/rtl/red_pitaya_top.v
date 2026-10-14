@@ -108,12 +108,15 @@ module red_pitaya_top (
    // Red Pitaya periphery
   
    // ADC
-   input  [16-1: 2] adc_dat_a_i        ,  // ADC CH1
-   input  [16-1: 2] adc_dat_b_i        ,  // ADC CH2
+   input  [16-1: 0] adc_dat_a_i        ,  // ADC CH1
+   input  [16-1: 0] adc_dat_b_i        ,  // ADC CH2
    input            adc_clk_p_i        ,  // ADC data clock
    input            adc_clk_n_i        ,  // ADC data clock
    output [ 2-1: 0] adc_clk_o          ,  // optional ADC clock source
    output           adc_cdcs_o         ,  // ADC clock duty cycle stabilizer
+   output           adc_sck_o          ,  // ADC parallel mode: 0 = full-rate CMOS
+   output           adc_sdi_o          ,  // ADC parallel mode power bit 0
+   output           adc_sdo_o          ,  // ADC parallel mode power bit 1
    // DAC
    output [14-1: 0] dac_dat_o          ,  // DAC combined data
    output           dac_wrt_o          ,  // DAC write
@@ -128,11 +131,6 @@ module red_pitaya_top (
    // Expansion connector
    inout  [ 8-1: 0] exp_p_io           ,
    inout  [ 8-1: 0] exp_n_io           ,
-   // SATA connector
-   output [ 2-1: 0] daisy_p_o          ,  // line 1 is clock capable
-   output [ 2-1: 0] daisy_n_o          ,
-   input  [ 2-1: 0] daisy_p_i          ,  // line 1 is clock capable
-   input  [ 2-1: 0] daisy_n_i          ,
    // LED
    output [ 8-1: 0] led_o       
 );
@@ -290,6 +288,11 @@ wire                  adc_clk;
 reg                   adc_rstn;
 reg          [14-1:0] adc_dat_a, adc_dat_b;
 wire  signed [14-1:0] adc_a    , adc_b    ;
+wire         [16-1:0] adc_dat_a_pin_order, adc_dat_b_pin_order;
+reg   signed [14-1:0] adc_dat_a_mapped, adc_dat_b_mapped;
+reg   signed [12-1:0] adc_dat_a_s12, adc_dat_b_s12;
+reg   signed [14-1:0] adc_dat_a_s14, adc_dat_b_s14;
+reg   signed [16-1:0] adc_dat_a_s16, adc_dat_b_s16;
 
 // DAC signals
 wire                  dac_clk_1x;
@@ -304,6 +307,13 @@ wire  signed [14-1:0] asg_a    , asg_b    ;
 
 // configuration
 wire                  digital_loop;
+
+// Static ADC assembly selector. Current RPSoM prototype is fitted with
+// LTC2145-12; keep the internal Red Pitaya data path at signed 14 bit.
+// The schematic net names follow the 12-bit part: D*_0 is package pin 27/47.
+// For 14/16-bit assemblies the active bus extends into the DNC companion pins,
+// so their raw bit order is rotated by 2/4 relative to the schematic names.
+localparam integer RPSOM_ADC_BITS = 12;
 
 ////////////////////////////////////////////////////////////////////////////////
 // PLL (clock and reaset)
@@ -386,17 +396,56 @@ ODDR i_adc_clk_n ( .Q(adc_clk_o[1]), .D1(1'b0), .D2(1'b1), .C(fclk[0]), .CE(1'b1
 // ADC clock duty cycle stabilizer is enabled
 assign adc_cdcs_o = 1'b1 ;
 
-// IO block registers should be used here
-// lowest 2 bits reserved for 16bit ADC
+// LTC2145/LTC2185 parallel programming mode straps (PAR/SER is tied high):
+// SCK=0 selects full-rate CMOS output mode, SDI/SDO=00 selects normal operation.
+assign adc_sck_o = 1'b0 ;
+assign adc_sdi_o = 1'b0 ;
+assign adc_sdo_o = 1'b0 ;
+
+// XDC maps adc_dat_*_i[n] to the 12-bit schematic ADC data bit D*_n.
+assign adc_dat_a_pin_order = adc_dat_a_i;
+assign adc_dat_b_pin_order = adc_dat_b_i;
+
+always @*
+begin
+  // ADC output format is unsigned negative-slope. Convert to signed first,
+  // then normalize every assembly option to the existing signed 14-bit path.
+  adc_dat_a_s12 = {adc_dat_a_pin_order[11], ~adc_dat_a_pin_order[10:0]};
+  adc_dat_b_s12 = {adc_dat_b_pin_order[11], ~adc_dat_b_pin_order[10:0]};
+  adc_dat_a_s14 = {adc_dat_a_pin_order[11], ~adc_dat_a_pin_order[10:0], ~adc_dat_a_pin_order[15:14]};
+  adc_dat_b_s14 = {adc_dat_b_pin_order[11], ~adc_dat_b_pin_order[10:0], ~adc_dat_b_pin_order[15:14]};
+  adc_dat_a_s16 = {adc_dat_a_pin_order[11], ~adc_dat_a_pin_order[10:0], ~adc_dat_a_pin_order[15:12]};
+  adc_dat_b_s16 = {adc_dat_b_pin_order[11], ~adc_dat_b_pin_order[10:0], ~adc_dat_b_pin_order[15:12]};
+
+  case (RPSOM_ADC_BITS)
+    12: begin
+      adc_dat_a_mapped = {adc_dat_a_s12, 2'b00};
+      adc_dat_b_mapped = {adc_dat_b_s12, 2'b00};
+    end
+    14: begin
+      adc_dat_a_mapped = adc_dat_a_s14;
+      adc_dat_b_mapped = adc_dat_b_s14;
+    end
+    16: begin
+      adc_dat_a_mapped = adc_dat_a_s16[15:2];
+      adc_dat_b_mapped = adc_dat_b_s16[15:2];
+    end
+    default: begin
+      adc_dat_a_mapped = adc_dat_a_s14;
+      adc_dat_b_mapped = adc_dat_b_s14;
+    end
+  endcase
+end
+
+// IO block registers should be used here.
 always @(posedge adc_clk)
 begin
-  adc_dat_a <= adc_dat_a_i[16-1:2];
-  adc_dat_b <= adc_dat_b_i[16-1:2];
+  adc_dat_a <= adc_dat_a_mapped;
+  adc_dat_b <= adc_dat_b_mapped;
 end
-    
-// transform into 2's complement (negative slope)
-assign adc_a = digital_loop ? dac_a : {adc_dat_a[14-1], ~adc_dat_a[14-2:0]};
-assign adc_b = digital_loop ? dac_b : {adc_dat_b[14-1], ~adc_dat_b[14-2:0]};
+
+assign adc_a = digital_loop ? dac_a : adc_dat_a;
+assign adc_b = digital_loop ? dac_b : adc_dat_b;
 
 ////////////////////////////////////////////////////////////////////////////////
 // DAC IO
@@ -610,12 +659,5 @@ red_pitaya_pwm pwm [4-1:0] (
   .pwm_o (dac_pwm_o),
   .pwm_s ()
 );
-
-//---------------------------------------------------------------------------------
-//  Daisy chain
-//  simple communication module
-
-assign daisy_p_o = 1'bz;
-assign daisy_n_o = 1'bz;
 
 endmodule
