@@ -307,7 +307,8 @@ end
  MODULE DEFINITIONS
  *********************************************/
 
-// PID0-2, TRIG, IIR, IQ0-2 (slots 0-7) disabled below for RPSoM: this
+// Original PID0-2, TRIG, IIR, IQ0-2 blocks are disabled for RPSoM.
+// Slots 0/1 instead implement registered ADC passthrough below. The original
 // whole chain (lock-in amplifier / PID / IIR signal-processing modules,
 // unused for the scope/streaming DAQ use case this board is actually
 // configured for) was the source of a severe, pre-existing timing closure
@@ -452,12 +453,30 @@ generate for (j = 7; j < 8; j = j+1) begin
 end endgenerate
 */
 
-// Tie off so the crossbar still synthesizes correctly with no dangling
-// entries for the disabled slots 0-7 above.
+// Slots 0/1 provide ADC passthrough; tie off the remaining disabled slots.
 generate for (j = 0; j < MODULES; j = j+1) begin
-   assign output_signal[j] = 14'h0;
-   assign output_direct[j] = 14'h0;
-   assign module_rdata[j]  = 32'h0;
+   if (j < 2) begin : adc_passthrough
+      reg signed [13:0] sample;
+      always @(posedge clk_i) begin
+         if (!rstn_i)
+            sample <= 14'd0;
+         else if (input_select[j] == ADC1)
+            sample <= dat_a_i;
+         else if (input_select[j] == ADC2)
+            sample <= dat_b_i;
+         else
+            sample <= 14'd0;
+      end
+      assign output_signal[j] = sample;
+      assign output_direct[j] = sample;
+      // Capability marker for software; older disabled slots return zero.
+      assign module_rdata[j] = (sys_addr[15:0] == 16'h0200)
+                             ? 32'h41444350 : 32'd0;
+   end else begin : disabled_slot
+      assign output_signal[j] = 14'h0;
+      assign output_direct[j] = 14'h0;
+      assign module_rdata[j] = 32'h0;
+   end
    assign module_ack[j]    = sys_wen | sys_ren;
 end
 endgenerate
