@@ -15,6 +15,8 @@
 ### ADC
 
 # ADC A data
+# PCB reroute: OF1 moved from U15 to R14. OF1 is unused by this RTL;
+# keep R14 unassigned until an ADC overflow input port is implemented.
 set_property IOSTANDARD LVCMOS18 [get_ports {adc_dat_a_i[*]}]
 set_property IOB        TRUE     [get_ports {adc_dat_a_i[*]}]
 # XDC bus indices follow the 12-bit schematic data names D1_0..D1_15.
@@ -26,7 +28,7 @@ set_property PACKAGE_PIN W14     [get_ports {adc_dat_a_i[4]}]
 set_property PACKAGE_PIN Y14     [get_ports {adc_dat_a_i[5]}]
 set_property PACKAGE_PIN W13     [get_ports {adc_dat_a_i[6]}]
 set_property PACKAGE_PIN V12     [get_ports {adc_dat_a_i[7]}]
-set_property PACKAGE_PIN V13     [get_ports {adc_dat_a_i[8]}]
+set_property PACKAGE_PIN P14     [get_ports {adc_dat_a_i[8]}]
 set_property PACKAGE_PIN T14     [get_ports {adc_dat_a_i[9]}]
 set_property PACKAGE_PIN T15     [get_ports {adc_dat_a_i[10]}]
 set_property PACKAGE_PIN V15     [get_ports {adc_dat_a_i[11]}]
